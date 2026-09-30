@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: pluginhub-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pluginhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pluginhub}
+      POSTGRES_DB: ${POSTGRES_DB:-pluginhub}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # 仅在数据卷首次初始化时执行（即“数据库初始化”）
+      - ./deploy/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pluginhub} -d ${POSTGRES_DB:-pluginhub}"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [pluginhub]
+
+  app:
+    build: .
+    image: pluginhub:1.0.0
+    container_name: pluginhub-app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-pluginhub}:${POSTGRES_PASSWORD:-pluginhub}@db:5432/${POSTGRES_DB:-pluginhub}
+      PACKAGE_DIR: /data/packages
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-1073741824}
+      SOLVER_NODE_LIMIT: ${SOLVER_NODE_LIMIT:-200000}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - packages:/data/packages
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [pluginhub]
+
+volumes:
+  pgdata:
+  packages:
+
+networks:
+  pluginhub:
+    driver: bridge
